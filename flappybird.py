@@ -1,4 +1,4 @@
-from lib2to3.refactor import get_all_fix_names
+from hashlib import new
 import random
 from sys import exit
 from tkinter import Toplevel
@@ -42,14 +42,30 @@ class Bird :
         self.y = H/2
         self.gravity = 0.4
         self.velocity = 0
+        self.alpha = 0.1      # Angular Acceleration
+        self.omega = 1.5     # Angular Velocity
+        self.theta = 0      # Angular Displacement
         self.game_state = 1
         self.lift = 6.5
         self.image = pygame.image.load('imgs/bird1.png').convert_alpha()
         self.rect = self.image.get_rect(center=(self.x, self.y))
     
 
+    def rotate(self) :
+        if self.theta <= -80 : self.theta = -80
+        if self.theta >= 15 : self.theta = 15 ; self.omega = 1.5
+        
+        if self.velocity > 0 :
+            self.theta -= self.omega
+        if self.velocity < 0 :
+
+            self.theta = 15
+
+
+
     
     def update(self, game_state) :
+        self.rotate()
         self.game_state = game_state
         if (self.game_state) :
             self.velocity += self.gravity
@@ -64,7 +80,9 @@ class Bird :
             self.velocity = 1
         if(self.rect.bottom) > 500 :
             self.rect.bottom = 500
-        screen.blit(self.image, self.rect)
+        rotated_image = pygame.transform.rotate(self.image, self.theta)
+        new_rect = rotated_image.get_rect(center = self.rect.center)
+        screen.blit(rotated_image, new_rect)
          
     
     def jump(self) :
