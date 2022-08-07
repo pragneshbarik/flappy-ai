@@ -1,17 +1,16 @@
-from hashlib import new
+from asyncio.windows_utils import pipe
 import random
 from sys import exit
-from tkinter import Toplevel
 import pygame
+import math
+import neat
+import os
 
 H = 600
 W = 288
 
 pygame.init()
-screen = pygame.display.set_mode((W, H))
-pygame.display.set_caption("flappy.ai")
-pygame.font.init()
-score_font = pygame.font.SysFont('Comic Sans MS', 30)
+
 
 
 class Background :
@@ -41,9 +40,8 @@ class Bird :
         self.x = 50
         self.y = H/2
         self.gravity = 0.4
-        self.velocity = 0
-        self.alpha = 0.1      # Angular Acceleration
-        self.omega = 1.5     # Angular Velocity
+        self.velocity = 0   
+        self.omega = 2.5     # Angular Velocity
         self.theta = 0      # Angular Displacement
         self.game_state = 1
         self.lift = 6.5
@@ -52,17 +50,10 @@ class Bird :
     
 
     def rotate(self) :
-        if self.theta <= -80 : self.theta = -80
-        if self.theta >= 15 : self.theta = 15 ; self.omega = 1.5
-        
-        if self.velocity > 0 :
-            self.theta -= self.omega
-        if self.velocity < 0 :
-
-            self.theta = 15
-
-
-
+        if self.theta <= -85 : self.theta = -85
+        if self.theta >= 20 : self.theta = 20 ; self.omega = 2.5
+        if self.velocity > 0 : self.theta -= self.omega
+        if self.velocity < 0 : self.theta = 20
     
     def update(self, game_state) :
         self.rotate()
@@ -80,7 +71,7 @@ class Bird :
             self.velocity = 1
         if(self.rect.bottom) > 500 :
             self.rect.bottom = 500
-        rotated_image = pygame.transform.rotate(self.image, self.theta)
+        rotated_image = pygame.transform.rotozoom(self.image, self.theta, 1)
         new_rect = rotated_image.get_rect(center = self.rect.center)
         screen.blit(rotated_image, new_rect)
          
@@ -141,7 +132,7 @@ class Pipe :
 
 class Pipes :
     def __init__(self) :
-        self.base_x = 400 
+        self.base_x = 200 
         self.game_state = 1
         self.pipes = []
         self.passed = 0
@@ -173,7 +164,8 @@ class Pipes :
         
 
 class Environment :
-    def __init__(self) :
+    def __init__(self, screen) :
+        self.screen = screen
         self.bird = Bird()
         self.bg = Background()
         self.pipes = Pipes()
@@ -182,6 +174,16 @@ class Environment :
         self.temp_score = 0
         self.dist = 0
     
+    def euclidean(self, p1, p2) :
+        return math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+
+    def network_parameters(self, bird) :
+        if len(self.pipes.pipes) == 2 : 
+            valid_pipes = [pipe for pipe in self.pipes.pipes if pipe.up.rect.left >= self.bird.rect.right]
+
+        return (abs(valid_pipes[0].up.rect.bottom - bird.rect.centery), abs(valid_pipes[0].down.rect.top-bird.rect.centery), bird.rect.centery, bird.velocity)
+        
+
 
     def run(self, screen) :
         self.bg.sky.draw(screen)
@@ -197,29 +199,93 @@ class Environment :
         if(self.score != self.pipes.passed) :
             self.score = self.pipes.passed
             print(self.score)
-        
 
         if not self.game_state :
-            print("----------------")
             self.__init__()
-
     
-game = Environment()
-clock = pygame.time.Clock()
-while True :
+    def evaluate_genomes(self, genomes, config) :
+        self.genotypes = []
+        self.networks = []
+        self.birds = []
+        self.pipes.passed = 0
+        self.pipes = Pipes() # Reinitialize Pipes
+        
 
-    for event in pygame.event.get() :
-        if event.type == pygame.QUIT :
-            pygame.quit()
-            exit()
-        if event.type == pygame.KEYDOWN :
-            if event.key == pygame.K_SPACE :
-                game.bird.jump()
-        if event.type == pygame.MOUSEBUTTONDOWN :
-            game.bird.jump()
+        
+        clock = pygame.time.Clock()
 
-    game.run(screen)
-    pygame.display.update()
-    clock.tick(60)
+        for g_id, genome in genomes :
+            genome.fitness = 0
+            network = neat.nn.FeedForwardNetwork.create(genome, config)
+            self.networks.append(network)
+            self.genotypes.append(genome)
+            self.birds.append(Bird())
+        
+        done = False
+
+        
+
+        while not done and len(self.birds) > 0 :
+            self.bg.sky.draw(screen)
+            self.pipes.draw(self.screen)
+            self.pipes.update(1)
+            score = score_font.render(str(self.pipes.passed), True, (0,0,0))
 
 
+            for event in pygame.event.get() :
+                if event.type == pygame.QUIT :
+                    done  = True
+                    pygame.quit()
+                    exit()
+                    break
+            
+            for id, bird in enumerate(self.birds) :
+                self.genotypes[id].fitness += 0.1
+                bird.draw(self.screen)
+                bird.update(1)
+
+                output = self.networks[id].activate(self.network_parameters(bird))[0]
+
+                if output > 0.5 :
+                    bird.jump()
+                
+                if self.pipes.collision(bird) or bird.rect.bottom >= 500 :
+                    self.genotypes[id].fitness -= 10
+                    self.networks.pop(self.birds.index(bird))
+                    self.genotypes.pop(self.birds.index(bird))
+                    self.birds.pop(self.birds.index(bird))
+
+        
+
+            
+            self.bg.ground.draw(self.screen)        
+            self.screen.blit(score, (W-30, 0))
+            
+            # for genes in self.genotypes :
+            #     genes.fitness += self.pipes.passed
+            
+            pygame.display.update()
+            clock.tick(60)
+        
+    def train(self, config_file, generations) :
+        config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                        neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                        config_file)
+
+        population = neat.Population(config)
+        population.add_reporter(neat.StdOutReporter(True))
+        stats = neat.StatisticsReporter()
+        population.add_reporter(stats)
+
+        winner = population.run(self.evaluate_genomes, generations)
+
+
+
+screen = pygame.display.set_mode((W, H))
+pygame.display.set_caption("flappy.ai")
+pygame.font.init()
+score_font = pygame.font.SysFont('Arial', 30)
+
+
+game = Environment(screen)
+game.train('config.txt', 100)
