@@ -1,4 +1,3 @@
-from asyncio.windows_utils import pipe
 import random
 from sys import exit
 import pygame
@@ -9,8 +8,42 @@ import os
 H = 600
 W = 288
 
+
+
 pygame.init()
 
+# default_global_settings = {
+#     "game_fps" : 60, 
+#     "gravity" : 0.4, 
+#     "bird_initial_pos" : (50, H/2),
+#     "bird_initial_vel" : 0, 
+#     "bird_max_vel" : -7.5,
+#     "bird_initial_angle" : 0, 
+#     "bird_jump_lift" : 6.5, 
+#     "bird_rotational_vel" : 2.5 , 
+#     "pipe_initial_pos_x" : 200, 
+#     "pipe_velocity" : 2,  
+#     "pipe_ygap" : 150, 
+#     "pipe_xgap" : 250, 
+#     "pipe_pairs" : 2, 
+# }
+
+
+global_settings = {
+    "game_fps" : 60, #
+    "gravity" : 0.4, #
+    "bird_initial_pos" : (50, H/2), # (x, y)
+    "bird_initial_vel" : 0, #
+    "bird_max_vel" : -7.5,
+    "bird_initial_angle" : 0, #
+    "bird_jump_lift" : 6.5, # +ve for upwards
+    "bird_rotational_vel" : 2.5 , #
+    "pipe_initial_pos_x" : 200, #
+    "pipe_velocity" : 2,  #
+    "pipe_ygap" : 150, #
+    "pipe_xgap" : 250, #
+    "pipe_pairs" : 2, 
+}
 
 
 class Background :
@@ -36,19 +69,23 @@ class Background :
 
             
 class Bird :
-    def __init__(self) -> None:
-        self.x = 50
-        self.y = H/2
-        self.gravity = 0.4
-        self.velocity = 0   
-        self.omega = 2.5     # Angular Velocity
-        self.theta = 0      # Angular Displacement
+    def __init__(self, game_params) -> None:
+        self.game_params =  game_params
+        self.set_params()
         self.game_state = 1
-        self.lift = 6.5
         self.image = pygame.image.load('imgs/bird1.png').convert_alpha()
         self.rect = self.image.get_rect(center=(self.x, self.y))
     
+    def set_params(self) :
+        self.x, self.y = self.game_params["bird_initial_pos"] 
+        self.gravity  = self.game_params["gravity"]
+        self.lift = self.game_params["bird_jump_lift"]
+        self.velocity = self.game_params["bird_initial_vel"]
+        self.theta = self.game_params["bird_initial_angle"]
+        self.omega = self.game_params["bird_rotational_vel"]
+        self.max_velocity = self.game_params["bird_max_vel"]
 
+    
     def rotate(self) :
         if self.theta <= -85 : self.theta = -85
         if self.theta >= 20 : self.theta = 20 ; self.omega = 2.5
@@ -57,17 +94,18 @@ class Bird :
     
     def fall(self) :
         self.velocity += self.gravity
-            if (self.rect.bottom >= 500) :
-                self.velocity=0
-            self.y += self.velocity
-
+        if (self.rect.bottom >= 500) :
+            self.velocity=0
+        self.y += self.velocity
+        
+        
 
     def update(self, game_state) :
         self.rotate()
         self.game_state = game_state
+        if(self.velocity <= self.max_velocity) : self.velocity = self.max_velocity
         if (self.game_state) :
             self.fall()
-            
     
     def draw(self, screen) :
         self.rect.center = (self.x, self.y)
@@ -108,16 +146,20 @@ class Pipe :
             self.rect = self.image.get_rect(topleft=(self.x, self.y))
             
 
-    def __init__(self, x) -> None:
+    def __init__(self, x, game_params) -> None:
+        self.game_params = game_params
         self.x = x
         self.y = random.randint(-199, 0)
-        self.d = 150;
-        self.velocity = 2
+        self.set_params()
         self.game_state = 1
         
         self.up = self.up(self.x, self.y)
-        self.down = self.down(self.x, self.up.rect.bottom + self.d)
+        self.down = self.down(self.x, self.up.rect.bottom + self.ygap)
 
+    def set_params(self) :
+        self.velocity = self.game_params["pipe_velocity"]
+        self.ygap = self.game_params["pipe_ygap"]
+    
     
 
     def update(self, game_state) :
@@ -140,14 +182,20 @@ class Pipe :
 
 
 class Pipes :
-    def __init__(self) :
-        self.base_x = 200 
+    def __init__(self, game_params) :
+        self.game_params = game_params
+        self.set_params()
         self.game_state = 1
         self.pipes = []
         self.passed = 0
-        for i in range (2) :
-            pipe = Pipe(self.base_x + i * 200)
+        for i in range (self.n_pipes) :
+            pipe = Pipe(self.base_x + i * self.xgap, self.game_params)
             self.pipes.append(pipe)
+    
+    def set_params(self) :
+        self.base_x = self.game_params["pipe_initial_pos_x"]
+        self.xgap = self.game_params["pipe_xgap"]
+        self.n_pipes = self.game_params["pipe_pairs"]
     
     def draw(self, screen) :
         for pipe in self.pipes :
@@ -158,8 +206,8 @@ class Pipes :
         if (self.game_state) :
             self.pipes = [pipe for pipe in self.pipes if pipe.x>=-50]
             
-            if (len(self.pipes)<2) :
-                new_pipe = Pipe(self.pipes[len(self.pipes)-1].x + 200)
+            if (len(self.pipes)<self.n_pipes) :
+                new_pipe = Pipe(self.pipes[len(self.pipes)-1].x + 200, self.game_params)
                 self.pipes.append(new_pipe)
                 self.passed+=1
         
@@ -173,26 +221,26 @@ class Pipes :
         
 
 class Environment :
-    def __init__(self, screen) :
+    def __init__(self, screen, game_params) :
+        self.game_params = game_params
+        self.fps = self.game_params['game_fps']
         self.screen = screen
-        self.bird = Bird()
+        self.bird = Bird(self.game_params)
         self.bg = Background()
-        self.pipes = Pipes()
+        self.pipes = Pipes(self.game_params)
         self.game_state = 1
         self.score = 0
         self.temp_score = 0
-        self.dist = 0
     
+
     def euclidean(self, p1, p2) :
         return math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
 
-    def network_parameters(self, bird) :
-        if len(self.pipes.pipes) == 2 : 
-            valid_pipes = [pipe for pipe in self.pipes.pipes if pipe.up.rect.left >= self.bird.rect.right]
 
-        return (abs(valid_pipes[0].up.rect.bottom - bird.rect.centery), abs(valid_pipes[0].down.rect.top-bird.rect.centery), bird.rect.centery, bird.velocity, valid_pipes[0].up.rect.left)
+    def network_parameters(self, bird) : 
+        valid_pipes = [pipe for pipe in self.pipes.pipes if pipe.up.rect.left > self.bird.rect.left]
+        return (abs(valid_pipes[0].up.rect.bottom - bird.rect.top), abs(valid_pipes[0].down.rect.top-bird.rect.bottom), bird.rect.centery, bird.velocity, abs(valid_pipes[0].up.rect.left - bird.rect.right))
         
-
 
     def run(self) :
         self.bg.sky.draw(self.screen)
@@ -208,22 +256,18 @@ class Environment :
 
         if(self.score != self.pipes.passed) :
             self.score = self.pipes.passed
-            print(self.score)
 
         if not self.game_state :
-            self.__init__(self.screen)
+            self.__init__(self.screen, self.game_params)
 
-    
     
     def evaluate_genomes(self, genomes, config) :
         self.genotypes = []
         self.networks = []
         self.birds = []
-        self.pipes = Pipes()
+        self.pipes = Pipes(self.game_params)
         self.pipes.passed = 0 # Reinitialize Pipes
         prev_passed = 0
-
-        
         clock = pygame.time.Clock()
 
         for g_id, genome in genomes :
@@ -231,7 +275,7 @@ class Environment :
             network = neat.nn.FeedForwardNetwork.create(genome, config)
             self.networks.append(network)
             self.genotypes.append(genome)
-            self.birds.append(Bird())
+            self.birds.append(Bird(self.game_params))
         
         done = False
 
@@ -239,9 +283,8 @@ class Environment :
             
             self.bg.sky.draw(self.screen)
             self.pipes.draw(self.screen)
-            self.pipes.update(True)
+            self.pipes.update(1)
             score = score_font.render(str(self.pipes.passed), True, (0,0,0))
-
 
             for event in pygame.event.get() :
                 if event.type == pygame.QUIT :
@@ -251,13 +294,13 @@ class Environment :
                     break
             
             for id, bird in enumerate(self.birds) :
-                self.genotypes[id].fitness += 0.1
+                self.genotypes[id].fitness += 1
                 bird.draw(self.screen)
-                bird.update(True)
+                bird.update(1)
 
                 output = self.networks[id].activate(self.network_parameters(bird))[0]
 
-                if output > 0 :
+                if output > 0.5 :
                     bird.jump()
                 
                 if self.pipes.collision(bird) or bird.rect.bottom >= 500 :
@@ -265,21 +308,17 @@ class Environment :
                     self.networks.pop(self.birds.index(bird))
                     self.genotypes.pop(self.birds.index(bird))
                     self.birds.pop(self.birds.index(bird))
-
-        
-
             
             self.bg.ground.draw(self.screen)        
-            self.screen.blit(score, (W-30, 0))
+            self.screen.blit(score, (W-35, 0))
             
             if prev_passed != self.pipes.passed :
                 prev_passed = self.pipes.passed
-                print(prev_passed)
                 for genotype in self.genotypes :
                     genotype.fitness += self.pipes.passed
             
             pygame.display.update()
-            clock.tick(120)
+            clock.tick(self.fps)
         
     def train(self, config_file, generations) :
         config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
@@ -308,9 +347,9 @@ class Environment :
             
             self.run()
             score = score_font.render(str(self.pipes.passed), True, (0,0,0))
-            self.screen.blit(score, (W-30, 0))
+            self.screen.blit(score, (W-35, 0))
             pygame.display.update()
-            clock.tick(60)
+            clock.tick(self.fps)
             
 
 
@@ -318,8 +357,9 @@ class Environment :
 screen = pygame.display.set_mode((W, H))
 pygame.display.set_caption("flappy.ai")
 pygame.font.init()
-score_font = pygame.font.SysFont('Arial', 30)
+score_font = pygame.font.SysFont('Comic Sans MS', 30)
 
 
-game = Environment(screen)
-game.train('config.txt', 1000)
+game = Environment(screen, global_settings)
+game.train('config.txt', 1000)  
+# game.play()
