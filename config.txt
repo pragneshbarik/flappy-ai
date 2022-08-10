@@ -1,18 +1,18 @@
 [NEAT]
 fitness_criterion     = max
-fitness_threshold     = 10000
-pop_size              = 500
+fitness_threshold     = 100000000
+pop_size              = 50
 reset_on_extinction   = False
 
 [DefaultGenome]
 # node activation options
-activation_default      = tanh
+activation_default      = sigmoid   
 activation_mutate_rate  = 0.0
-activation_options      = tanh
+activation_options      = sigmoid
 
 # node aggregation options
 aggregation_default     = sum
-aggregation_mutate_rate = 0.1
+aggregation_mutate_rate = 0.0
 aggregation_options     = sum
 
 # node bias options
@@ -34,7 +34,7 @@ conn_delete_prob        = 0.5
 
 # connection enable options
 enabled_default         = True
-enabled_mutate_rate     = 0.1
+enabled_mutate_rate     = 0.01
 
 feed_forward            = True
 initial_connection      = full
@@ -53,8 +53,8 @@ response_init_mean      = 1.0
 response_init_stdev     = 0.0
 response_max_value      = 30.0
 response_min_value      = -30.0
-response_mutate_power   = 0.5
-response_mutate_rate    = 0.1
+response_mutate_power   = 0.0
+response_mutate_rate    = 0.0
 response_replace_rate   = 0.0
 
 # connection weight options
